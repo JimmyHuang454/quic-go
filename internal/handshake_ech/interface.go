@@ -1,11 +1,11 @@
 package handshake
 
 import (
-	"crypto/tls"
 	"errors"
 	"io"
 	"time"
 
+	"github.com/sagernet/cloudflare-tls"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/wire"
 )

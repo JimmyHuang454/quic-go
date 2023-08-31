@@ -3,9 +3,10 @@ package qtls
 import (
 	"crypto"
 	"crypto/cipher"
-	"crypto/tls"
 	"fmt"
 	"unsafe"
+
+	"github.com/sagernet/cloudflare-tls"
 )
 
 type cipherSuiteTLS13 struct {

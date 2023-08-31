@@ -3,10 +3,10 @@ package handshake
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 
+	"github.com/sagernet/cloudflare-tls"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"golang.org/x/crypto/chacha20"
 )

@@ -2,10 +2,10 @@ package quic
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"net"
 
+	"github.com/sagernet/cloudflare-tls"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/utils"
 	"github.com/sagernet/quic-go/logging"

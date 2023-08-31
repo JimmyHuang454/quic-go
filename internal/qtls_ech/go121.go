@@ -2,9 +2,9 @@ package qtls
 
 import (
 	"bytes"
-	"crypto/tls"
 	"fmt"
 
+	"github.com/sagernet/cloudflare-tls"
 	"github.com/sagernet/quic-go/internal/protocol"
 )
 
