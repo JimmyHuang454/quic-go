@@ -10,13 +10,7 @@ import (
 	"github.com/sagernet/quic-go/quicvarint"
 )
 
-// Clone clones a Config
-func (c *Config) Clone() *Config {
-	copy := *c
-	return &copy
-}
-
-func (c *Config) handshakeTimeout() time.Duration {
+func handshakeTimeout(c *Config) time.Duration {
 	return utils.Max(protocol.DefaultHandshakeTimeout, 2*c.HandshakeIdleTimeout)
 }
 
