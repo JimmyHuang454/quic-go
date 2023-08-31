@@ -356,4 +356,6 @@ type ConnectionState struct {
 	Version VersionNumber
 	// GSO says if generic segmentation offload is used
 	GSO bool
+
+	ExportKeyingMaterial func(label string, context []byte, length int) ([]byte, error)
 }
