@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/quic-go/qpack"
-	"github.com/sagernet/quic-go"
+	"github.com/sagernet/quic-go/ech"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/utils"
 	"github.com/sagernet/quic-go/quicvarint"

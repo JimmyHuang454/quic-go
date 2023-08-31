@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sagernet/quic-go/internal/handshake"
+	"github.com/sagernet/quic-go/internal/handshake_ech"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/qerr"
 	"github.com/sagernet/quic-go/internal/wire"
