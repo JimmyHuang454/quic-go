@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sagernet/quic-go"
+	"github.com/sagernet/quic-go/ech"
 	"github.com/sagernet/quic-go/internal/utils"
 )
 

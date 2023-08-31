@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"github.com/quic-go/qpack"
-	"github.com/sagernet/quic-go"
+	"github.com/sagernet/quic-go/ech"
 	"github.com/sagernet/quic-go/internal/utils"
 	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/http2/hpack"

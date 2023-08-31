@@ -16,7 +16,7 @@ import (
 	"github.com/sagernet/quic-go/congestion"
 	"github.com/sagernet/quic-go/internal/ackhandler"
 	"github.com/sagernet/quic-go/internal/flowcontrol"
-	"github.com/sagernet/quic-go/internal/handshake"
+	"github.com/sagernet/quic-go/internal/handshake_ech"
 	"github.com/sagernet/quic-go/internal/logutils"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/qerr"
