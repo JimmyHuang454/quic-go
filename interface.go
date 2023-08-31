@@ -357,4 +357,6 @@ type ConnectionState struct {
 	Used0RTT bool
 	// Version is the QUIC version of the QUIC connection.
 	Version VersionNumber
+
+	ExportKeyingMaterial func(label string, context []byte, length int) ([]byte, error)
 }
