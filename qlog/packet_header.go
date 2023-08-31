@@ -3,10 +3,9 @@ package qlog
 import (
 	"fmt"
 
+	"github.com/francoispqt/gojay"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/logging"
-
-	"github.com/francoispqt/gojay"
 )
 
 func getPacketTypeFromEncryptionLevel(encLevel protocol.EncryptionLevel) logging.PacketType {

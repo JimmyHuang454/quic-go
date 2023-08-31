@@ -6,12 +6,11 @@ import (
 	"net"
 	"time"
 
+	"github.com/francoispqt/gojay"
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/utils"
 	"github.com/sagernet/quic-go/logging"
-
-	"github.com/francoispqt/gojay"
 )
 
 func milliseconds(dur time.Duration) float64 { return float64(dur.Nanoseconds()) / 1e6 }

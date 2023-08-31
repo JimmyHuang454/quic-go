@@ -9,10 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quic-go/qpack"
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/internal/utils"
-
-	"github.com/quic-go/qpack"
 )
 
 // The maximum length of an encoded HTTP/3 frame header is 16:

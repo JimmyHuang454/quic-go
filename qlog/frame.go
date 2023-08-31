@@ -3,10 +3,9 @@ package qlog
 import (
 	"fmt"
 
+	"github.com/francoispqt/gojay"
 	"github.com/sagernet/quic-go/internal/wire"
 	"github.com/sagernet/quic-go/logging"
-
-	"github.com/francoispqt/gojay"
 )
 
 type frame struct {

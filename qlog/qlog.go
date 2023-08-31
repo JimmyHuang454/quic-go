@@ -10,12 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/francoispqt/gojay"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/utils"
 	"github.com/sagernet/quic-go/internal/wire"
 	"github.com/sagernet/quic-go/logging"
-
-	"github.com/francoispqt/gojay"
 )
 
 // Setting of this only works when quic-go is used as a library.
