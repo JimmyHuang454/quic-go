@@ -27,9 +27,9 @@ func (s *connection) CloseJLSForward() {
 
 func (s *connection) JLSHandshakeError(e error, p receivedPacket) {
 	if s.config.UseJLS && !strings.Contains(e.Error(), "JLS") {
-		s.jlsIsVaild = true
+		s.JLSIsVaild = true
 	}
-	if s.config.UseJLS && !s.IsClient() && !s.jlsIsVaild {
+	if s.config.UseJLS && !s.IsClient() && !s.JLSIsVaild {
 		s.receivedPackets <- p
 	}
 }
@@ -107,7 +107,7 @@ func (s *connection) IsClient() bool {
 }
 
 func (s *connection) JLSHandler() {
-	if !s.config.UseJLS || s.IsClient() || s.jlsIsVaild || !s.jlsIsChecked {
+	if !s.config.UseJLS || s.IsClient() || s.JLSIsVaild || !s.JLSIsChecked {
 		return
 	}
 	s.JLSForwardLastAliveTime = time.Now()

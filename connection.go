@@ -218,8 +218,8 @@ type connection struct {
 	JLSForwardAddr          *net.UDPAddr
 	JLSForwardLastAliveTime time.Time
 	// only server
-	jlsIsChecked bool
-	jlsIsVaild   bool
+	JLSIsChecked bool
+	JLSIsVaild   bool
 }
 
 var (
@@ -584,7 +584,7 @@ runLoop:
 					break runLoop
 				default:
 					// JLS_mark
-					s.jlsIsVaild = true
+					s.JLSIsVaild = true
 				}
 				if s.handshakeComplete {
 					// Now process all packets in the receivedPackets channel.
