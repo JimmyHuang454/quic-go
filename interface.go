@@ -338,6 +338,11 @@ type Config struct {
 	Tracer          func(context.Context, logging.Perspective, ConnectionID) logging.ConnectionTracer
 
 	MaxDatagramFrameSize int64
+
+	UseJLS      bool
+	JLSPWD      []byte
+	JLSIV       []byte
+	FallbackURL string
 }
 
 type ClientHelloInfo struct {

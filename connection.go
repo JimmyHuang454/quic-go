@@ -212,6 +212,14 @@ type connection struct {
 	logID  string
 	tracer logging.ConnectionTracer
 	logger utils.Logger
+
+	JLSForwardCon           rawConn // read
+	JLSForwardSend          *sconn  // send
+	JLSForwardAddr          *net.UDPAddr
+	JLSForwardLastAliveTime time.Time
+	// only server
+	jlsIsChecked bool
+	jlsIsVaild   bool
 }
 
 var (
@@ -571,8 +579,12 @@ runLoop:
 				// Don't set timers and send packets if the packet made us close the connection.
 				select {
 				case closeErr = <-s.closeChan:
+					// JLS_mark
+					s.JLSHandshakeError(closeErr.err, firstPacket)
 					break runLoop
 				default:
+					// JLS_mark
+					s.jlsIsVaild = true
 				}
 				if s.handshakeComplete {
 					// Now process all packets in the receivedPackets channel.
@@ -646,6 +658,9 @@ runLoop:
 			sendQueueAvailable = nil
 		}
 	}
+
+	// JLS_mark
+	s.JLSHandler()
 
 	s.cryptoStreamHandler.Close()
 	s.sendQueue.Close() // close the send queue before sending the CONNECTION_CLOSE
