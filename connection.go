@@ -338,6 +338,7 @@ var newConnection = func(
 		tracer,
 		logger,
 		s.version,
+		conf.UseJLS, conf.JLSIV, conf.JLSPWD,
 	)
 	s.cryptoStreamHandler = cs
 	s.packer = newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.maxDatagramFrameSize)
@@ -446,6 +447,7 @@ var newClientConnection = func(
 		tracer,
 		logger,
 		s.version,
+		conf.UseJLS, conf.JLSIV, conf.JLSPWD,
 	)
 	s.cryptoStreamHandler = cs
 	s.cryptoStreamManager = newCryptoStreamManager(cs, s.initialStream, s.handshakeStream, oneRTTStream)

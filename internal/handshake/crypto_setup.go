@@ -80,6 +80,9 @@ func NewCryptoSetupClient(
 	tracer logging.ConnectionTracer,
 	logger utils.Logger,
 	version protocol.VersionNumber,
+	UseJLS bool,
+	JLSPWD []byte,
+	JLSIV []byte,
 ) CryptoSetup {
 	cs := newCryptoSetup(
 		connID,
@@ -95,6 +98,10 @@ func NewCryptoSetupClient(
 	tlsConf.MinVersion = tls.VersionTLS13
 	quicConf := &qtls.QUICConfig{TLSConfig: tlsConf}
 	qtls.SetupConfigForClient(quicConf, cs.marshalDataForSessionState, cs.handleDataFromSessionState)
+
+	quicConf.ExtraConfig.UseJLS = UseJLS
+	quicConf.ExtraConfig.JLSIV = JLSIV
+	quicConf.ExtraConfig.JLSPWD = JLSPWD
 	cs.tlsConf = tlsConf
 
 	cs.conn = qtls.QUICClient(quicConf)
@@ -114,6 +121,10 @@ func NewCryptoSetupServer(
 	tracer logging.ConnectionTracer,
 	logger utils.Logger,
 	version protocol.VersionNumber,
+
+	UseJLS bool,
+	JLSPWD []byte,
+	JLSIV []byte,
 ) CryptoSetup {
 	cs := newCryptoSetup(
 		connID,
@@ -128,8 +139,11 @@ func NewCryptoSetupServer(
 
 	quicConf := &qtls.QUICConfig{TLSConfig: tlsConf}
 	qtls.SetupConfigForServer(quicConf, cs.allow0RTT, cs.getDataForSessionTicket, cs.accept0RTT)
-	addConnToClientHelloInfo(quicConf.TLSConfig, localAddr, remoteAddr)
+	quicConf.ExtraConfig.UseJLS = UseJLS
+	quicConf.ExtraConfig.JLSIV = JLSIV
+	quicConf.ExtraConfig.JLSPWD = JLSPWD
 
+	addConnToClientHelloInfo(quicConf.TLSConfig, localAddr, remoteAddr)
 	cs.tlsConf = quicConf.TLSConfig
 	cs.conn = qtls.QUICServer(quicConf)
 
