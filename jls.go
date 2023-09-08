@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ForwardDefaultTimeout = 3 * time.Second
+	ForwardDefaultTimeout = 5 * time.Minute
 )
 
 func (s *connection) CloseJLSForward() {
