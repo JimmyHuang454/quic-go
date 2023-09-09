@@ -234,6 +234,16 @@ func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
 	return s.serveConn(config, nil)
 }
 
+// just for test.
+func (s *Server) ListenAndServeTLSWithPem(certPem []byte, keyPem []byte) error {
+	certs := make([]tls.Certificate, 1)
+	certs[0], _ = tls.X509KeyPair(certPem, keyPem)
+	config := &tls.Config{
+		Certificates: certs,
+	}
+	return s.serveConn(config, nil)
+}
+
 // Serve an existing UDP connection.
 // It is possible to reuse the same connection for outgoing connections.
 // Closing the server does not close the connection.

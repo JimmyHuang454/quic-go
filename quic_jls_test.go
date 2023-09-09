@@ -42,16 +42,6 @@ func setupHandler() http.Handler {
 	return mux
 }
 
-// just for test.
-func (s *http3.Server) ListenAndServeTLSWithPem() error {
-	certs := make([]tls.Certificate, 1)
-	certs[0], _ = tls.X509KeyPair(certPem, keyPem)
-	config := &tls.Config{
-		Certificates: certs,
-	}
-	return s.serveConn(config, nil)
-}
-
 func RunServer() {
 
 	handler := setupHandler()
@@ -60,7 +50,7 @@ func RunServer() {
 		Addr:       ":1244",
 		QuicConfig: &Config{UseJLS: true, JLSPWD: []byte("abc"), JLSIV: []byte("abc"), FallbackURL: "www.jsdelivr.com"},
 	}
-	err := server.ListenAndServeTLSWithPem()
+	err := server.ListenAndServeTLSWithPem(certPem, keyPem)
 	fmt.Println(err)
 }
 
