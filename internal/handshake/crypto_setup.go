@@ -125,6 +125,7 @@ func NewCryptoSetupServer(
 	UseJLS bool,
 	JLSPWD []byte,
 	JLSIV []byte,
+	FallbackURL string,
 ) CryptoSetup {
 	cs := newCryptoSetup(
 		connID,
@@ -142,6 +143,7 @@ func NewCryptoSetupServer(
 	quicConf.ExtraConfig.UseJLS = UseJLS
 	quicConf.ExtraConfig.JLSIV = JLSIV
 	quicConf.ExtraConfig.JLSPWD = JLSPWD
+	// quicConf.ExtraConfig.FallbackURL = FallbackURL
 
 	addConnToClientHelloInfo(quicConf.TLSConfig, localAddr, remoteAddr)
 	cs.tlsConf = quicConf.TLSConfig

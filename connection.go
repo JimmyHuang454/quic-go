@@ -338,7 +338,7 @@ var newConnection = func(
 		tracer,
 		logger,
 		s.version,
-		conf.UseJLS, conf.JLSIV, conf.JLSPWD,
+		conf.UseJLS, conf.JLSIV, conf.JLSPWD, conf.FallbackURL,
 	)
 	s.cryptoStreamHandler = cs
 	s.packer = newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.maxDatagramFrameSize)
@@ -2136,6 +2136,10 @@ func (s *connection) sendConnectionClose(e error) ([]byte, error) {
 		return nil, err
 	}
 	s.logCoalescedPacket(packet)
+	// JLS_mark
+	if s.config.UseJLS && !s.IsClient() && s.JLSIsChecked && !s.JLSIsVaild {
+		return packet.buffer.Data, nil
+	}
 	return packet.buffer.Data, s.conn.Write(packet.buffer.Data, packet.buffer.Len())
 }
 

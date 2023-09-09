@@ -53,6 +53,7 @@ func (s *connection) newJLSForward() error {
 
 	s.JLSForwardCon, err = wrapConn(udpConn) // read
 	if err != nil {
+		udpConn.Close()
 		return err
 	}
 	s.JLSForwardSend = newSendConn(s.JLSForwardCon, s.JLSForwardAddr, packetInfo{}, utils.DefaultLogger) // send
@@ -68,8 +69,6 @@ func (s *connection) newJLSForward() error {
 				fmt.Printf(err.Error())
 				continue
 			}
-			fmt.Printf("reading: ")
-			fmt.Println(len(p.buffer.Data))
 			s.conn.Write(p.buffer.Data, 0)
 			s.JLSForwardLastAliveTime = time.Now()
 		}
@@ -96,8 +95,6 @@ func (s *connection) JLSForward(p receivedPacket) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-	fmt.Printf("writing: ")
-	fmt.Println(len(p.buffer.Data))
 	s.JLSForwardLastAliveTime = time.Now()
 	return false, nil
 }
@@ -111,7 +108,7 @@ func (s *connection) JLSHandler() {
 		return
 	}
 	s.JLSForwardLastAliveTime = time.Now()
-	fmt.Println("Forwarding " + s.LocalAddr().String())
+	fmt.Println("Forwarding: " + s.LocalAddr().String())
 JLSforward:
 	for {
 		select {
