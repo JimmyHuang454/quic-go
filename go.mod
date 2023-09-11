@@ -25,8 +25,6 @@ require (
 
 //replace github.com/JimmyHuang454/qtls-go1-20-JLS => ../qtls-go1-20-JLS
 
-require github.com/quic-go/quic-go v0.36.1
-
 require (
 	github.com/JimmyHuang454/JLS-go v0.0.0-20230831150107-90d536585ba0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

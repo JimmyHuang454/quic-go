@@ -213,9 +213,10 @@ type connection struct {
 	tracer logging.ConnectionTracer
 	logger utils.Logger
 
-	JLSForwardCon           rawConn // read
-	JLSForwardSend          *sconn  // send
-	JLSForwardAddr          *net.UDPAddr
+	JLSForwardRaw  *net.UDPConn
+	JLSForwardSend *net.UDPConn
+	JLSForwardAddr *net.UDPAddr
+
 	JLSForwardLastAliveTime time.Time
 	// only server
 	JLSIsChecked bool
@@ -579,6 +580,7 @@ runLoop:
 			case firstPacket := <-s.receivedPackets:
 				wasProcessed := s.handlePacketImpl(firstPacket)
 				// Don't set timers and send packets if the packet made us close the connection.
+				s.JLSIsChecked = true
 				select {
 				case closeErr = <-s.closeChan:
 					// JLS_mark

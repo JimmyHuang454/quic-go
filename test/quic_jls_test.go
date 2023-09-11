@@ -1,4 +1,4 @@
-package quic
+package test
 
 import (
 	"bytes"
@@ -10,7 +10,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/quic-go/quic-go/http3"
+	"github.com/sagernet/quic-go"
+	"github.com/sagernet/quic-go/http3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -35,7 +36,7 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 func setupHandler() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/demo/tiles", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "Hello JLS")
 	})
 
@@ -44,11 +45,10 @@ func setupHandler() http.Handler {
 
 func RunServer() {
 
-	handler := setupHandler()
 	server := http3.Server{
-		Handler:    handler,
-		Addr:       ":1244",
-		QuicConfig: &Config{UseJLS: true, JLSPWD: []byte("abc"), JLSIV: []byte("abc"), FallbackURL: "www.jsdelivr.com"},
+		Handler:    setupHandler(),
+		Addr:       "127.0.0.1:1244",
+		QuicConfig: &quic.Config{UseJLS: true, JLSPWD: []byte("abc"), JLSIV: []byte("abc"), FallbackURL: "www.jsdelivr.com"},
 	}
 	err := server.ListenAndServeTLSWithPem(certPem, keyPem)
 	fmt.Println(err)
@@ -62,9 +62,11 @@ func TestQuicFallback(t *testing.T) {
 		log.Fatal(err)
 	}
 
+	domain := "www.jsdelivr.com"
 	roundTripper := &http3.RoundTripper{
 		TLSClientConfig: &tls.Config{
-			RootCAs: pool,
+			RootCAs:    pool,
+			ServerName: domain, InsecureSkipVerify: true,
 		},
 	}
 	defer roundTripper.Close()
@@ -72,7 +74,8 @@ func TestQuicFallback(t *testing.T) {
 	hclient := &http.Client{
 		Transport: roundTripper,
 	}
-	addr := "https://www.jsdelivr.com"
+	addr := "https://127.0.0.1:1244"
+	// addr = "https://www.jsdelivr.com:443"
 	rsp, err := hclient.Get(addr)
 	fmt.Println(err)
 	assert.Nil(t, err)

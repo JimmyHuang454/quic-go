@@ -8,19 +8,18 @@ import (
 	"time"
 
 	"github.com/sagernet/quic-go/internal/protocol"
-	"github.com/sagernet/quic-go/internal/utils"
 )
 
 const (
 	ForwardDefaultTimeout = 5 * time.Minute
+	ReadTimeout           = 5 * time.Second
 )
 
 func (s *connection) CloseJLSForward() {
-	if s.JLSForwardCon == nil {
+	if s.JLSForwardRaw == nil {
 		return
 	}
-	s.JLSForwardCon.Close()
-	s.JLSForwardSend.Close()
+	s.JLSForwardRaw.Close()
 	s.closeChan <- closeError{err: errors.New("timeout"), immediate: false, remote: false}
 	fmt.Println("Closed JLS forwarding.")
 }
@@ -30,7 +29,8 @@ func (s *connection) JLSHandshakeError(e error, p receivedPacket) {
 		s.JLSIsVaild = true
 	}
 	if s.config.UseJLS && !s.IsClient() && !s.JLSIsVaild {
-		s.receivedPackets <- p
+		s.JLSForwardLastAliveTime = time.Now()
+		s.JLSForward(p)
 	}
 }
 
@@ -38,60 +38,67 @@ func (s *connection) IsTimeout() bool {
 	return time.Now().Sub(s.JLSForwardLastAliveTime) > ForwardDefaultTimeout
 }
 
+func (s *connection) JLSPrint(msg any) {
+	if s.IsClient() {
+		fmt.Printf("Client: ")
+	} else {
+		fmt.Printf("Server: ")
+	}
+	fmt.Println(msg)
+}
+
 func (s *connection) newJLSForward() error {
 	var err error
 	s.JLSForwardAddr, err = net.ResolveUDPAddr("udp", s.config.FallbackURL)
 	fmt.Println(s.JLSForwardAddr)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 
-	udpConn, err := net.ListenUDP("udp", nil)
+	s.JLSForwardRaw, err = net.ListenUDP("udp", nil)
 	if err != nil {
 		return err
 	}
-
-	s.JLSForwardCon, err = wrapConn(udpConn) // read
-	if err != nil {
-		udpConn.Close()
-		return err
-	}
-	s.JLSForwardSend = newSendConn(s.JLSForwardCon, s.JLSForwardAddr, packetInfo{}, utils.DefaultLogger) // send
 
 	go func() {
+		buffer := make([]byte, 2000)
 		for !s.IsTimeout() {
-			err := s.JLSForwardSend.SetReadDeadline(time.Now().Add(ForwardDefaultTimeout))
+			err := s.JLSForwardRaw.SetReadDeadline(time.Now().Add(ForwardDefaultTimeout))
 			if err != nil {
 				break
 			}
-			p, err := s.JLSForwardSend.ReadPacket()
+			n, _, err := s.JLSForwardRaw.ReadFromUDP(buffer)
 			if err != nil {
 				fmt.Printf(err.Error())
 				continue
 			}
-			s.conn.Write(p.buffer.Data, 0)
+			p := buffer[:n]
+			s.conn.Write(p, protocol.ByteCount(len(p)))
 			s.JLSForwardLastAliveTime = time.Now()
 		}
+		buffer = nil
 		s.CloseJLSForward()
 	}()
 
 	return nil
 }
 
+// FIXME: connection ID will change after handshake. So Server can not catch all packets to forward.
 func (s *connection) JLSForward(p receivedPacket) (bool, error) {
 	s.config.FallbackURL = "www.jsdelivr.com:443"
 	if s.config.FallbackURL == "" {
 		return true, errors.New("FallbackURL is empty.")
 	}
 
-	if s.JLSForwardCon == nil {
+	if s.JLSForwardRaw == nil {
 		err := s.newJLSForward()
 		if err != nil {
 			return true, err
 		}
 	}
 
-	err := s.JLSForwardSend.Write(p.buffer.Data, 0)
+	_, err := s.JLSForwardRaw.WriteTo(p.data, s.JLSForwardAddr)
 	if err != nil {
 		return true, err
 	}
@@ -107,7 +114,6 @@ func (s *connection) JLSHandler() {
 	if !s.config.UseJLS || s.IsClient() || s.JLSIsVaild || !s.JLSIsChecked {
 		return
 	}
-	s.JLSForwardLastAliveTime = time.Now()
 	fmt.Println("Forwarding: " + s.LocalAddr().String())
 JLSforward:
 	for {
