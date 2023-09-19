@@ -3,10 +3,10 @@ package protocol
 import "time"
 
 // DesiredReceiveBufferSize is the kernel UDP receive buffer size that we'd like to use.
-const DesiredReceiveBufferSize = (1 << 20) * 2 // 2 MB
+const DesiredReceiveBufferSize = (1 << 20) * 8 // 8 MB
 
 // DesiredSendBufferSize is the kernel UDP send buffer size that we'd like to use.
-const DesiredSendBufferSize = (1 << 20) * 2 // 2 MB
+const DesiredSendBufferSize = (1 << 20) * 8 // 8 MB
 
 // InitialPacketSizeIPv4 is the maximum packet size that we use for sending IPv4 packets.
 const InitialPacketSizeIPv4 = 1252
@@ -15,7 +15,7 @@ const InitialPacketSizeIPv4 = 1252
 const InitialPacketSizeIPv6 = 1232
 
 // MaxCongestionWindowPackets is the maximum congestion window in packet.
-const MaxCongestionWindowPackets = 10000
+const MaxCongestionWindowPackets = 20000
 
 // MaxUndecryptablePackets limits the number of undecryptable packets that are queued in the connection.
 const MaxUndecryptablePackets = 32
@@ -25,7 +25,7 @@ const MaxUndecryptablePackets = 32
 const ConnectionFlowControlMultiplier = 1.5
 
 // DefaultInitialMaxStreamData is the default initial stream-level flow control window for receiving data
-const DefaultInitialMaxStreamData = (1 << 10) * 512 // 512 kb
+const DefaultInitialMaxStreamData = (1 << 20) * 2 // 2 MB
 
 // DefaultInitialMaxData is the connection-level flow control window for receiving data
 const DefaultInitialMaxData = ConnectionFlowControlMultiplier * DefaultInitialMaxStreamData
@@ -65,9 +65,6 @@ const MaxAcceptQueueSize = 32
 // TokenValidity is the duration that a (non-retry) token is considered valid
 const TokenValidity = 24 * time.Hour
 
-// RetryTokenValidity is the duration that a retry token is considered valid
-const RetryTokenValidity = 10 * time.Second
-
 // MaxOutstandingSentPackets is maximum number of packets saved for retransmission.
 // When reached, it imposes a soft limit on sending new packets:
 // Sending ACKs and retransmission is still allowed, but now new regular packets can be sent.
@@ -84,7 +81,7 @@ const MaxNonAckElicitingAcks = 19
 
 // MaxStreamFrameSorterGaps is the maximum number of gaps between received StreamFrames
 // prevents DoS attacks against the streamFrameSorter
-const MaxStreamFrameSorterGaps = 1000
+const MaxStreamFrameSorterGaps = 20000
 
 // MinStreamFrameBufferSize is the minimum data length of a received STREAM frame
 // that we use the buffer for. This protects against a DoS where an attacker would send us
@@ -107,9 +104,6 @@ const DefaultIdleTimeout = 30 * time.Second
 
 // DefaultHandshakeIdleTimeout is the default idle timeout used before handshake completion.
 const DefaultHandshakeIdleTimeout = 5 * time.Second
-
-// DefaultHandshakeTimeout is the default timeout for a connection until the crypto handshake succeeds.
-const DefaultHandshakeTimeout = 10 * time.Second
 
 // MaxKeepAliveInterval is the maximum time until we send a packet to keep a connection alive.
 // It should be shorter than the time that NATs clear their mapping.
