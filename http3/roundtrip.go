@@ -12,9 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"golang.org/x/net/http/httpguts"
-
 	"github.com/sagernet/quic-go"
+	"golang.org/x/net/http/httpguts"
 )
 
 type roundTripCloser interface {

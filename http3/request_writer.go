@@ -11,13 +11,12 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/net/http/httpguts"
-	"golang.org/x/net/http2/hpack"
-	"golang.org/x/net/idna"
-
 	"github.com/quic-go/qpack"
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/internal/utils"
+	"golang.org/x/net/http/httpguts"
+	"golang.org/x/net/http2/hpack"
+	"golang.org/x/net/idna"
 )
 
 const bodyCopyBufferSize = 8 * 1024

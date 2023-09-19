@@ -7,9 +7,8 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/sagernet/quic-go/internal/protocol"
-
 	"github.com/quic-go/qtls-go1-20"
+	"github.com/sagernet/quic-go/internal/protocol"
 )
 
 type (

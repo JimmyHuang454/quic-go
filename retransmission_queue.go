@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/sagernet/quic-go/internal/ackhandler"
-
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/wire"
 )

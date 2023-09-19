@@ -13,12 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/quic-go/qpack"
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/utils"
 	"github.com/sagernet/quic-go/quicvarint"
-
-	"github.com/quic-go/qpack"
 )
 
 // MethodGet0RTT allows a GET request to be sent using 0-RTT.

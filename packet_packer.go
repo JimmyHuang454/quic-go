@@ -6,13 +6,12 @@ import (
 	"errors"
 	"fmt"
 
-	"golang.org/x/exp/rand"
-
 	"github.com/sagernet/quic-go/internal/ackhandler"
 	"github.com/sagernet/quic-go/internal/handshake"
 	"github.com/sagernet/quic-go/internal/protocol"
 	"github.com/sagernet/quic-go/internal/qerr"
 	"github.com/sagernet/quic-go/internal/wire"
+	"golang.org/x/exp/rand"
 )
 
 var errNothingToPack = errors.New("nothing to pack")
@@ -167,7 +166,7 @@ func newPacketPacker(
 		perspective:          perspective,
 		framer:               framer,
 		acks:                 acks,
-		rand:                *rand.New(rand.NewSource(binary.BigEndian.Uint64(b[:]))),
+		rand:                 *rand.New(rand.NewSource(binary.BigEndian.Uint64(b[:]))),
 		pnManager:            packetNumberManager,
 		maxDatagramFrameSize: maxDatagramFrameSize,
 	}
