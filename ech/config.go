@@ -6,12 +6,15 @@ import (
 	"time"
 
 	"github.com/sagernet/quic-go/internal/protocol"
-	"github.com/sagernet/quic-go/internal/utils"
 	"github.com/sagernet/quic-go/quicvarint"
 )
 
 func handshakeTimeout(c *Config) time.Duration {
-	return utils.Max(protocol.DefaultHandshakeTimeout, 2*c.HandshakeIdleTimeout)
+	return 2 * c.HandshakeIdleTimeout
+}
+
+func maxRetryTokenAge(c *Config) time.Duration {
+	return handshakeTimeout(c)
 }
 
 func validateConfig(config *Config) error {
@@ -46,9 +49,6 @@ func populateServerConfig(config *Config) *Config {
 	config = populateConfig(config)
 	if config.MaxTokenAge == 0 {
 		config.MaxTokenAge = protocol.TokenValidity
-	}
-	if config.MaxRetryTokenAge == 0 {
-		config.MaxRetryTokenAge = protocol.RetryTokenValidity
 	}
 	if config.RequireAddressValidation == nil {
 		config.RequireAddressValidation = func(net.Addr) bool { return false }
@@ -104,27 +104,25 @@ func populateConfig(config *Config) *Config {
 	}
 
 	return &Config{
-		GetConfigForClient:               config.GetConfigForClient,
-		Versions:                         versions,
-		HandshakeIdleTimeout:             handshakeIdleTimeout,
-		MaxIdleTimeout:                   idleTimeout,
-		MaxTokenAge:                      config.MaxTokenAge,
-		MaxRetryTokenAge:                 config.MaxRetryTokenAge,
-		RequireAddressValidation:         config.RequireAddressValidation,
-		KeepAlivePeriod:                  config.KeepAlivePeriod,
-		InitialStreamReceiveWindow:       initialStreamReceiveWindow,
-		MaxStreamReceiveWindow:           maxStreamReceiveWindow,
-		InitialConnectionReceiveWindow:   initialConnectionReceiveWindow,
-		MaxConnectionReceiveWindow:       maxConnectionReceiveWindow,
-		AllowConnectionWindowIncrease:    config.AllowConnectionWindowIncrease,
-		MaxIncomingStreams:               maxIncomingStreams,
-		MaxIncomingUniStreams:            maxIncomingUniStreams,
-		TokenStore:                       config.TokenStore,
-		EnableDatagrams:                  config.EnableDatagrams,
-		DisablePathMTUDiscovery:          config.DisablePathMTUDiscovery,
-		DisableVersionNegotiationPackets: config.DisableVersionNegotiationPackets,
-		Allow0RTT:                        config.Allow0RTT,
-		Tracer:                           config.Tracer,
-		MaxDatagramFrameSize:             config.MaxDatagramFrameSize,
+		GetConfigForClient:             config.GetConfigForClient,
+		Versions:                       versions,
+		HandshakeIdleTimeout:           handshakeIdleTimeout,
+		MaxIdleTimeout:                 idleTimeout,
+		MaxTokenAge:                    config.MaxTokenAge,
+		RequireAddressValidation:       config.RequireAddressValidation,
+		KeepAlivePeriod:                config.KeepAlivePeriod,
+		InitialStreamReceiveWindow:     initialStreamReceiveWindow,
+		MaxStreamReceiveWindow:         maxStreamReceiveWindow,
+		InitialConnectionReceiveWindow: initialConnectionReceiveWindow,
+		MaxConnectionReceiveWindow:     maxConnectionReceiveWindow,
+		AllowConnectionWindowIncrease:  config.AllowConnectionWindowIncrease,
+		MaxIncomingStreams:             maxIncomingStreams,
+		MaxIncomingUniStreams:          maxIncomingUniStreams,
+		TokenStore:                     config.TokenStore,
+		EnableDatagrams:                config.EnableDatagrams,
+		DisablePathMTUDiscovery:        config.DisablePathMTUDiscovery,
+		Allow0RTT:                      config.Allow0RTT,
+		Tracer:                         config.Tracer,
+		MaxDatagramFrameSize:           config.MaxDatagramFrameSize,
 	}
 }

@@ -248,7 +248,7 @@ var newConnection = func(
 		handshakeDestConnID: destConnID,
 		srcConnIDLen:        srcConnID.Len(),
 		tokenGenerator:      tokenGenerator,
-		oneRTTStream:        newCryptoStream(true),
+		oneRTTStream:        newCryptoStream(),
 		perspective:         protocol.PerspectiveServer,
 		tracer:              tracer,
 		logger:              logger,
@@ -283,6 +283,7 @@ var newConnection = func(
 		getMaxPacketSize(s.conn.RemoteAddr()),
 		s.rttStats,
 		clientAddressValidated,
+		s.conn.capabilities().ECN,
 		s.perspective,
 		s.tracer,
 		s.logger,
@@ -394,13 +395,14 @@ var newClientConnection = func(
 		initialPacketNumber,
 		getMaxPacketSize(s.conn.RemoteAddr()),
 		s.rttStats,
-		false, /* has no effect */
+		false, // has no effect
+		s.conn.capabilities().ECN,
 		s.perspective,
 		s.tracer,
 		s.logger,
 	)
 	s.mtuDiscoverer = newMTUDiscoverer(s.rttStats, getMaxPacketSize(s.conn.RemoteAddr()), s.sentPacketHandler.SetMaxDatagramSize)
-	oneRTTStream := newCryptoStream(true)
+	oneRTTStream := newCryptoStream()
 	params := &wire.TransportParameters{
 		InitialMaxStreamDataBidiRemote: protocol.ByteCount(s.config.InitialStreamReceiveWindow),
 		InitialMaxStreamDataBidiLocal:  protocol.ByteCount(s.config.InitialStreamReceiveWindow),
@@ -460,8 +462,8 @@ var newClientConnection = func(
 }
 
 func (s *connection) preSetup() {
-	s.initialStream = newCryptoStream(false)
-	s.handshakeStream = newCryptoStream(false)
+	s.initialStream = newCryptoStream()
+	s.handshakeStream = newCryptoStream()
 	s.sendQueue = newSendQueue(s.conn)
 	s.retransmissionQueue = newRetransmissionQueue()
 	s.frameParser = wire.NewFrameParser(s.config.EnableDatagrams)
@@ -686,6 +688,7 @@ func (s *connection) ConnectionState() ConnectionState {
 	s.connState.TLS = *(*stdTLS.ConnectionState)(unsafe.Pointer(&cs.ConnectionState))
 	s.connState.ExportKeyingMaterial = cs.ConnectionState.ExportKeyingMaterial
 	s.connState.Used0RTT = cs.Used0RTT
+	s.connState.GSO = s.conn.capabilities().GSO
 	return s.connState
 }
 
@@ -880,7 +883,7 @@ func (s *connection) handlePacketImpl(rp receivedPacket) bool {
 	// Set remote address to the address of the last received valid packet
 	if s.perspective == protocol.PerspectiveServer && processed {
 		// Connection migration
-		// s.conn.SetRemoteAddr(rp.remoteAddr)
+		s.conn.SetRemoteAddr(rp.remoteAddr)
 	}
 
 	p.buffer.MaybeRelease()
@@ -927,6 +930,7 @@ func (s *connection) handleShortHeaderPacket(p receivedPacket, destConnID protoc
 					KeyPhase:         keyPhase,
 				},
 				p.Size(),
+				p.ecn,
 				frames,
 			)
 		}
@@ -949,7 +953,7 @@ func (s *connection) handleLongHeaderPacket(p receivedPacket, hdr *wire.Header) 
 	}()
 
 	if hdr.Type == protocol.PacketTypeRetry {
-		return s.handleRetryPacket(hdr, p.data)
+		return s.handleRetryPacket(hdr, p.data, p.rcvTime)
 	}
 
 	// The server can change the source connection ID with the first Handshake packet.
@@ -1035,7 +1039,7 @@ func (s *connection) handleUnpackError(err error, p receivedPacket, pt logging.P
 	return false
 }
 
-func (s *connection) handleRetryPacket(hdr *wire.Header, data []byte) bool /* was this a valid Retry */ {
+func (s *connection) handleRetryPacket(hdr *wire.Header, data []byte, rcvTime time.Time) bool /* was this a valid Retry */ {
 	if s.perspective == protocol.PerspectiveServer {
 		if s.tracer != nil {
 			s.tracer.DroppedPacket(logging.PacketTypeRetry, protocol.ByteCount(len(data)), logging.PacketDropUnexpectedPacket)
@@ -1084,7 +1088,7 @@ func (s *connection) handleRetryPacket(hdr *wire.Header, data []byte) bool /* wa
 	}
 	newDestConnID := hdr.SrcConnectionID
 	s.receivedRetry = true
-	if err := s.sentPacketHandler.ResetForRetry(); err != nil {
+	if err := s.sentPacketHandler.ResetForRetry(rcvTime); err != nil {
 		s.closeLocal(err)
 		return false
 	}
@@ -1212,7 +1216,7 @@ func (s *connection) handleUnpackedLongHeaderPacket(
 	var log func([]logging.Frame)
 	if s.tracer != nil {
 		log = func(frames []logging.Frame) {
-			s.tracer.ReceivedLongHeaderPacket(packet.hdr, packetSize, frames)
+			s.tracer.ReceivedLongHeaderPacket(packet.hdr, packetSize, ecn, frames)
 		}
 	}
 	isAckEliciting, err := s.handleFrames(packet.data, packet.hdr.DestConnectionID, packet.encryptionLevel, log)
@@ -1852,9 +1856,10 @@ func (s *connection) sendPackets(now time.Time) error {
 		if err != nil {
 			return err
 		}
-		s.logShortHeaderPacket(p.DestConnID, p.Ack, p.Frames, p.StreamFrames, p.PacketNumber, p.PacketNumberLen, p.KeyPhase, buf.Len(), false)
-		s.registerPackedShortHeaderPacket(p, now)
-		s.sendQueue.Send(buf, buf.Len())
+		ecn := s.sentPacketHandler.ECNMode(true)
+		s.logShortHeaderPacket(p.DestConnID, p.Ack, p.Frames, p.StreamFrames, p.PacketNumber, p.PacketNumberLen, p.KeyPhase, ecn, buf.Len(), false)
+		s.registerPackedShortHeaderPacket(p, ecn, now)
+		s.sendQueue.Send(buf, 0, ecn)
 		// This is kind of a hack. We need to trigger sending again somehow.
 		s.pacingDeadline = deadlineSendImmediately
 		return nil
@@ -1874,7 +1879,7 @@ func (s *connection) sendPackets(now time.Time) error {
 			return err
 		}
 		s.sentFirstPacket = true
-		if err := s.sendPackedCoalescedPacket(packet, now); err != nil {
+		if err := s.sendPackedCoalescedPacket(packet, s.sentPacketHandler.ECNMode(packet.IsOnlyShortHeaderPacket()), now); err != nil {
 			return err
 		}
 		sendMode := s.sentPacketHandler.SendMode(now)
@@ -1895,7 +1900,8 @@ func (s *connection) sendPackets(now time.Time) error {
 func (s *connection) sendPacketsWithoutGSO(now time.Time) error {
 	for {
 		buf := getPacketBuffer()
-		if _, err := s.appendPacket(buf, s.mtuDiscoverer.CurrentSize(), now); err != nil {
+		ecn := s.sentPacketHandler.ECNMode(true)
+		if _, err := s.appendOneShortHeaderPacket(buf, s.mtuDiscoverer.CurrentSize(), ecn, now); err != nil {
 			if err == errNothingToPack {
 				buf.Release()
 				return nil
@@ -1903,7 +1909,7 @@ func (s *connection) sendPacketsWithoutGSO(now time.Time) error {
 			return err
 		}
 
-		s.sendQueue.Send(buf, buf.Len())
+		s.sendQueue.Send(buf, 0, ecn)
 
 		if s.sendQueue.WouldBlock() {
 			return nil
@@ -1928,9 +1934,10 @@ func (s *connection) sendPacketsWithGSO(now time.Time) error {
 	buf := getLargePacketBuffer()
 	maxSize := s.mtuDiscoverer.CurrentSize()
 
+	ecn := s.sentPacketHandler.ECNMode(true)
 	for {
 		var dontSendMore bool
-		size, err := s.appendPacket(buf, maxSize, now)
+		size, err := s.appendOneShortHeaderPacket(buf, maxSize, ecn, now)
 		if err != nil {
 			if err != errNothingToPack {
 				return err
@@ -1952,15 +1959,19 @@ func (s *connection) sendPacketsWithGSO(now time.Time) error {
 			}
 		}
 
+		// Don't send more packets in this batch if they require a different ECN marking than the previous ones.
+		nextECN := s.sentPacketHandler.ECNMode(true)
+
 		// Append another packet if
 		// 1. The congestion controller and pacer allow sending more
 		// 2. The last packet appended was a full-size packet
-		// 3. We still have enough space for another full-size packet in the buffer
-		if !dontSendMore && size == maxSize && buf.Len()+maxSize <= buf.Cap() {
+		// 3. The next packet will have the same ECN marking
+		// 4. We still have enough space for another full-size packet in the buffer
+		if !dontSendMore && size == maxSize && nextECN == ecn && buf.Len()+maxSize <= buf.Cap() {
 			continue
 		}
 
-		s.sendQueue.Send(buf, maxSize)
+		s.sendQueue.Send(buf, uint16(maxSize), ecn)
 
 		if dontSendMore {
 			return nil
@@ -1989,6 +2000,7 @@ func (s *connection) resetPacingDeadline() {
 
 func (s *connection) maybeSendAckOnlyPacket(now time.Time) error {
 	if !s.handshakeConfirmed {
+		ecn := s.sentPacketHandler.ECNMode(false)
 		packet, err := s.packer.PackCoalescedPacket(true, s.mtuDiscoverer.CurrentSize(), s.version)
 		if err != nil {
 			return err
@@ -1996,9 +2008,10 @@ func (s *connection) maybeSendAckOnlyPacket(now time.Time) error {
 		if packet == nil {
 			return nil
 		}
-		return s.sendPackedCoalescedPacket(packet, time.Now())
+		return s.sendPackedCoalescedPacket(packet, ecn, time.Now())
 	}
 
+	ecn := s.sentPacketHandler.ECNMode(true)
 	p, buf, err := s.packer.PackAckOnlyPacket(s.mtuDiscoverer.CurrentSize(), s.version)
 	if err != nil {
 		if err == errNothingToPack {
@@ -2006,9 +2019,9 @@ func (s *connection) maybeSendAckOnlyPacket(now time.Time) error {
 		}
 		return err
 	}
-	s.logShortHeaderPacket(p.DestConnID, p.Ack, p.Frames, p.StreamFrames, p.PacketNumber, p.PacketNumberLen, p.KeyPhase, buf.Len(), false)
-	s.registerPackedShortHeaderPacket(p, now)
-	s.sendQueue.Send(buf, buf.Len())
+	s.logShortHeaderPacket(p.DestConnID, p.Ack, p.Frames, p.StreamFrames, p.PacketNumber, p.PacketNumberLen, p.KeyPhase, ecn, buf.Len(), false)
+	s.registerPackedShortHeaderPacket(p, ecn, now)
+	s.sendQueue.Send(buf, 0, ecn)
 	return nil
 }
 
@@ -2040,24 +2053,24 @@ func (s *connection) sendProbePacket(encLevel protocol.EncryptionLevel, now time
 	if packet == nil || (len(packet.longHdrPackets) == 0 && packet.shortHdrPacket == nil) {
 		return fmt.Errorf("connection BUG: couldn't pack %s probe packet", encLevel)
 	}
-	return s.sendPackedCoalescedPacket(packet, now)
+	return s.sendPackedCoalescedPacket(packet, s.sentPacketHandler.ECNMode(packet.IsOnlyShortHeaderPacket()), now)
 }
 
-// appendPacket appends a new packet to the given packetBuffer.
+// appendOneShortHeaderPacket appends a new packet to the given packetBuffer.
 // If there was nothing to pack, the returned size is 0.
-func (s *connection) appendPacket(buf *packetBuffer, maxSize protocol.ByteCount, now time.Time) (protocol.ByteCount, error) {
+func (s *connection) appendOneShortHeaderPacket(buf *packetBuffer, maxSize protocol.ByteCount, ecn protocol.ECN, now time.Time) (protocol.ByteCount, error) {
 	startLen := buf.Len()
 	p, err := s.packer.AppendPacket(buf, maxSize, s.version)
 	if err != nil {
 		return 0, err
 	}
 	size := buf.Len() - startLen
-	s.logShortHeaderPacket(p.DestConnID, p.Ack, p.Frames, p.StreamFrames, p.PacketNumber, p.PacketNumberLen, p.KeyPhase, size, false)
-	s.registerPackedShortHeaderPacket(p, now)
+	s.logShortHeaderPacket(p.DestConnID, p.Ack, p.Frames, p.StreamFrames, p.PacketNumber, p.PacketNumberLen, p.KeyPhase, ecn, size, false)
+	s.registerPackedShortHeaderPacket(p, ecn, now)
 	return size, nil
 }
 
-func (s *connection) registerPackedShortHeaderPacket(p shortHeaderPacket, now time.Time) {
+func (s *connection) registerPackedShortHeaderPacket(p shortHeaderPacket, ecn protocol.ECN, now time.Time) {
 	if s.firstAckElicitingPacketAfterIdleSentTime.IsZero() && (len(p.StreamFrames) > 0 || ackhandler.HasAckElicitingFrames(p.Frames)) {
 		s.firstAckElicitingPacketAfterIdleSentTime = now
 	}
@@ -2066,12 +2079,12 @@ func (s *connection) registerPackedShortHeaderPacket(p shortHeaderPacket, now ti
 	if p.Ack != nil {
 		largestAcked = p.Ack.LargestAcked()
 	}
-	s.sentPacketHandler.SentPacket(now, p.PacketNumber, largestAcked, p.StreamFrames, p.Frames, protocol.Encryption1RTT, p.Length, p.IsPathMTUProbePacket)
+	s.sentPacketHandler.SentPacket(now, p.PacketNumber, largestAcked, p.StreamFrames, p.Frames, protocol.Encryption1RTT, ecn, p.Length, p.IsPathMTUProbePacket)
 	s.connIDManager.SentPacket()
 }
 
-func (s *connection) sendPackedCoalescedPacket(packet *coalescedPacket, now time.Time) error {
-	s.logCoalescedPacket(packet)
+func (s *connection) sendPackedCoalescedPacket(packet *coalescedPacket, ecn protocol.ECN, now time.Time) error {
+	s.logCoalescedPacket(packet, ecn)
 	for _, p := range packet.longHdrPackets {
 		if s.firstAckElicitingPacketAfterIdleSentTime.IsZero() && p.IsAckEliciting() {
 			s.firstAckElicitingPacketAfterIdleSentTime = now
@@ -2080,7 +2093,7 @@ func (s *connection) sendPackedCoalescedPacket(packet *coalescedPacket, now time
 		if p.ack != nil {
 			largestAcked = p.ack.LargestAcked()
 		}
-		s.sentPacketHandler.SentPacket(now, p.header.PacketNumber, largestAcked, p.streamFrames, p.frames, p.EncryptionLevel(), p.length, false)
+		s.sentPacketHandler.SentPacket(now, p.header.PacketNumber, largestAcked, p.streamFrames, p.frames, p.EncryptionLevel(), ecn, p.length, false)
 		if s.perspective == protocol.PerspectiveClient && p.EncryptionLevel() == protocol.EncryptionHandshake {
 			// On the client side, Initial keys are dropped as soon as the first Handshake packet is sent.
 			// See Section 4.9.1 of RFC 9001.
@@ -2097,10 +2110,10 @@ func (s *connection) sendPackedCoalescedPacket(packet *coalescedPacket, now time
 		if p.Ack != nil {
 			largestAcked = p.Ack.LargestAcked()
 		}
-		s.sentPacketHandler.SentPacket(now, p.PacketNumber, largestAcked, p.StreamFrames, p.Frames, protocol.Encryption1RTT, p.Length, p.IsPathMTUProbePacket)
+		s.sentPacketHandler.SentPacket(now, p.PacketNumber, largestAcked, p.StreamFrames, p.Frames, protocol.Encryption1RTT, ecn, p.Length, p.IsPathMTUProbePacket)
 	}
 	s.connIDManager.SentPacket()
-	s.sendQueue.Send(packet.buffer, packet.buffer.Len())
+	s.sendQueue.Send(packet.buffer, 0, ecn)
 	return nil
 }
 
@@ -2122,11 +2135,12 @@ func (s *connection) sendConnectionClose(e error) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.logCoalescedPacket(packet)
-	return packet.buffer.Data, s.conn.Write(packet.buffer.Data, packet.buffer.Len())
+	ecn := s.sentPacketHandler.ECNMode(packet.IsOnlyShortHeaderPacket())
+	s.logCoalescedPacket(packet, ecn)
+	return packet.buffer.Data, s.conn.Write(packet.buffer.Data, 0, ecn)
 }
 
-func (s *connection) logLongHeaderPacket(p *longHeaderPacket) {
+func (s *connection) logLongHeaderPacket(p *longHeaderPacket, ecn protocol.ECN) {
 	// quic-go logging
 	if s.logger.Debug() {
 		p.header.Log(s.logger)
@@ -2154,7 +2168,7 @@ func (s *connection) logLongHeaderPacket(p *longHeaderPacket) {
 		if p.ack != nil {
 			ack = logutils.ConvertAckFrame(p.ack)
 		}
-		s.tracer.SentLongHeaderPacket(p.header, p.length, ack, frames)
+		s.tracer.SentLongHeaderPacket(p.header, p.length, ecn, ack, frames)
 	}
 }
 
@@ -2166,11 +2180,12 @@ func (s *connection) logShortHeaderPacket(
 	pn protocol.PacketNumber,
 	pnLen protocol.PacketNumberLen,
 	kp protocol.KeyPhaseBit,
+	ecn protocol.ECN,
 	size protocol.ByteCount,
 	isCoalesced bool,
 ) {
 	if s.logger.Debug() && !isCoalesced {
-		s.logger.Debugf("-> Sending packet %d (%d bytes) for connection %s, 1-RTT", pn, size, s.logID)
+		s.logger.Debugf("-> Sending packet %d (%d bytes) for connection %s, 1-RTT (ECN: %s)", pn, size, s.logID, ecn)
 	}
 	// quic-go logging
 	if s.logger.Debug() {
@@ -2207,13 +2222,14 @@ func (s *connection) logShortHeaderPacket(
 				KeyPhase:         kp,
 			},
 			size,
+			ecn,
 			ack,
 			fs,
 		)
 	}
 }
 
-func (s *connection) logCoalescedPacket(packet *coalescedPacket) {
+func (s *connection) logCoalescedPacket(packet *coalescedPacket, ecn protocol.ECN) {
 	if s.logger.Debug() {
 		// There's a short period between dropping both Initial and Handshake keys and completion of the handshake,
 		// during which we might call PackCoalescedPacket but just pack a short header packet.
@@ -2226,6 +2242,7 @@ func (s *connection) logCoalescedPacket(packet *coalescedPacket) {
 				packet.shortHdrPacket.PacketNumber,
 				packet.shortHdrPacket.PacketNumberLen,
 				packet.shortHdrPacket.KeyPhase,
+				ecn,
 				packet.shortHdrPacket.Length,
 				false,
 			)
@@ -2238,10 +2255,10 @@ func (s *connection) logCoalescedPacket(packet *coalescedPacket) {
 		}
 	}
 	for _, p := range packet.longHdrPackets {
-		s.logLongHeaderPacket(p)
+		s.logLongHeaderPacket(p, ecn)
 	}
 	if p := packet.shortHdrPacket; p != nil {
-		s.logShortHeaderPacket(p.DestConnID, p.Ack, p.Frames, p.StreamFrames, p.PacketNumber, p.PacketNumberLen, p.KeyPhase, p.Length, true)
+		s.logShortHeaderPacket(p.DestConnID, p.Ack, p.Frames, p.StreamFrames, p.PacketNumber, p.PacketNumberLen, p.KeyPhase, ecn, p.Length, true)
 	}
 }
 

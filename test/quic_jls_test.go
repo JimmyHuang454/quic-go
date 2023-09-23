@@ -75,7 +75,7 @@ func TestQuicFallback(t *testing.T) {
 		Transport: roundTripper,
 	}
 	addr := "https://127.0.0.1:1244"
-	// addr = "https://www.jsdelivr.com:443"
+	addr = "https://www.jsdelivr.com:443"
 	rsp, err := hclient.Get(addr)
 	fmt.Println(err)
 	assert.Nil(t, err)

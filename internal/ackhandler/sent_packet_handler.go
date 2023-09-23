@@ -95,6 +95,9 @@ type sentPacketHandler struct {
 	// The alarm timeout
 	alarm time.Time
 
+	enableECN  bool
+	ecnTracker ecnHandler
+
 	perspective protocol.Perspective
 
 	tracer logging.ConnectionTracer
@@ -113,6 +116,7 @@ func newSentPacketHandler(
 	initialMaxDatagramSize protocol.ByteCount,
 	rttStats *utils.RTTStats,
 	clientAddressValidated bool,
+	enableECN bool,
 	pers protocol.Perspective,
 	tracer logging.ConnectionTracer,
 	logger utils.Logger,
@@ -125,7 +129,7 @@ func newSentPacketHandler(
 		tracer,
 	)
 
-	return &sentPacketHandler{
+	h := &sentPacketHandler{
 		peerCompletedAddressValidation: pers == protocol.PerspectiveServer,
 		peerAddressValidated:           pers == protocol.PerspectiveClient || clientAddressValidated,
 		initialPackets:                 newPacketNumberSpace(initialPN, false),
@@ -137,6 +141,11 @@ func newSentPacketHandler(
 		tracer:                         tracer,
 		logger:                         logger,
 	}
+	if enableECN {
+		h.enableECN = true
+		h.ecnTracker = newECNTracker(logger, tracer)
+	}
+	return h
 }
 
 func (h *sentPacketHandler) removeFromBytesInFlight(p *packet) {
@@ -231,6 +240,7 @@ func (h *sentPacketHandler) SentPacket(
 	streamFrames []StreamFrame,
 	frames []Frame,
 	encLevel protocol.EncryptionLevel,
+	ecn protocol.ECN,
 	size protocol.ByteCount,
 	isPathMTUProbePacket bool,
 ) {
@@ -256,6 +266,10 @@ func (h *sentPacketHandler) SentPacket(
 
 	cc := h.getCongestionControl()
 	cc.OnPacketSent(t, h.bytesInFlight, pn, size, isAckEliciting)
+
+	if encLevel == protocol.Encryption1RTT && h.ecnTracker != nil {
+		h.ecnTracker.SentPacket(pn, ecn)
+	}
 
 	if !isAckEliciting {
 		pnSpace.history.SentNonAckElicitingPacket(pn)
@@ -307,8 +321,6 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 		}
 	}
 
-	pnSpace.largestAcked = utils.Max(pnSpace.largestAcked, largestAcked)
-
 	// Servers complete address validation when a protected packet is received.
 	if h.perspective == protocol.PerspectiveClient && !h.peerCompletedAddressValidation &&
 		(encLevel == protocol.EncryptionHandshake || encLevel == protocol.Encryption1RTT) {
@@ -341,6 +353,17 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 			cc.MaybeExitSlowStart()
 		}
 	}
+
+	// Only inform the ECN tracker about new 1-RTT ACKs if the ACK increases the largest acked.
+	if encLevel == protocol.Encryption1RTT && h.ecnTracker != nil && largestAcked > pnSpace.largestAcked {
+		congested := h.ecnTracker.HandleNewlyAcked(ackedPackets, int64(ack.ECT0), int64(ack.ECT1), int64(ack.ECNCE))
+		if congested {
+			cc.OnCongestionEvent(largestAcked, 0, priorInFlight)
+		}
+	}
+
+	pnSpace.largestAcked = utils.Max(pnSpace.largestAcked, largestAcked)
+
 	if err := h.detectLostPackets(rcvTime, encLevel); err != nil {
 		return false, err
 	}
@@ -645,7 +668,10 @@ func (h *sentPacketHandler) detectLostPackets(now time.Time, encLevel protocol.E
 				h.removeFromBytesInFlight(p)
 				h.queueFramesForRetransmission(p)
 				if !p.IsPathMTUProbePacket {
-					cc.OnPacketLost(p.PacketNumber, p.Length, priorInFlight)
+					cc.OnCongestionEvent(p.PacketNumber, p.Length, priorInFlight)
+				}
+				if encLevel == protocol.Encryption1RTT && h.ecnTracker != nil {
+					h.ecnTracker.LostPacket(p.PacketNumber)
 				}
 			}
 		}
@@ -720,6 +746,16 @@ func (h *sentPacketHandler) OnLossDetectionTimeout() error {
 
 func (h *sentPacketHandler) GetLossDetectionTimeout() time.Time {
 	return h.alarm
+}
+
+func (h *sentPacketHandler) ECNMode(isShortHeaderPacket bool) protocol.ECN {
+	if !h.enableECN {
+		return protocol.ECNUnsupported
+	}
+	if !isShortHeaderPacket {
+		return protocol.ECNNon
+	}
+	return h.ecnTracker.Mode()
 }
 
 func (h *sentPacketHandler) PeekPacketNumber(encLevel protocol.EncryptionLevel) (protocol.PacketNumber, protocol.PacketNumberLen) {
@@ -835,7 +871,7 @@ func (h *sentPacketHandler) queueFramesForRetransmission(p *packet) {
 	p.Frames = nil
 }
 
-func (h *sentPacketHandler) ResetForRetry() error {
+func (h *sentPacketHandler) ResetForRetry(now time.Time) error {
 	h.bytesInFlight = 0
 	var firstPacketSendTime time.Time
 	h.initialPackets.history.Iterate(func(p *packet) (bool, error) {
@@ -861,7 +897,6 @@ func (h *sentPacketHandler) ResetForRetry() error {
 	// Otherwise, we don't know which Initial the Retry was sent in response to.
 	if h.ptoCount == 0 {
 		// Don't set the RTT to a value lower than 5ms here.
-		now := time.Now()
 		h.rttStats.UpdateRTT(utils.Max(minRTTAfterRetry, now.Sub(firstPacketSendTime)), 0, now)
 		if h.logger.Debug() {
 			h.logger.Debugf("\tupdated RTT: %s (σ: %s)", h.rttStats.SmoothedRTT(), h.rttStats.MeanDeviation())

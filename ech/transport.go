@@ -57,6 +57,17 @@ type Transport struct {
 	// See section 10.3 of RFC 9000 for details.
 	StatelessResetKey *StatelessResetKey
 
+	// The TokenGeneratorKey is used to encrypt session resumption tokens.
+	// If no key is configured, a random key will be generated.
+	// If multiple servers are authoritative for the same domain, they should use the same key,
+	// see section 8.1.3 of RFC 9000 for details.
+	TokenGeneratorKey *TokenGeneratorKey
+
+	// DisableVersionNegotiationPackets disables the sending of Version Negotiation packets.
+	// This can be useful if version information is exchanged out-of-band.
+	// It has no effect for clients.
+	DisableVersionNegotiationPackets bool
+
 	// A Tracer traces events that don't belong to a single QUIC connection.
 	Tracer logging.Tracer
 
@@ -95,28 +106,10 @@ type Transport struct {
 // There can only be a single listener on any net.PacketConn.
 // Listen may only be called again after the current Listener was closed.
 func (t *Transport) Listen(tlsConf *tls.Config, conf *Config) (*Listener, error) {
-	if tlsConf == nil {
-		return nil, errors.New("quic: tls.Config not set")
-	}
-	if err := validateConfig(conf); err != nil {
-		return nil, err
-	}
-
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	if t.server != nil {
-		return nil, errListenerAlreadySet
-	}
-	conf = populateServerConfig(conf)
-	if err := t.init(false); err != nil {
-		return nil, err
-	}
-	s, err := newServer(t.conn, t.handlerMap, t.connIDGenerator, tlsConf, conf, t.Tracer, t.closeServer, false)
+	s, err := t.createServer(tlsConf, conf, false)
 	if err != nil {
 		return nil, err
 	}
-	t.server = s
 	return &Listener{baseServer: s}, nil
 }
 
@@ -124,6 +117,14 @@ func (t *Transport) Listen(tlsConf *tls.Config, conf *Config) (*Listener, error)
 // There can only be a single listener on any net.PacketConn.
 // Listen may only be called again after the current Listener was closed.
 func (t *Transport) ListenEarly(tlsConf *tls.Config, conf *Config) (*EarlyListener, error) {
+	s, err := t.createServer(tlsConf, conf, true)
+	if err != nil {
+		return nil, err
+	}
+	return &EarlyListener{baseServer: s}, nil
+}
+
+func (t *Transport) createServer(tlsConf *tls.Config, conf *Config, allow0RTT bool) (*baseServer, error) {
 	if tlsConf == nil {
 		return nil, errors.New("quic: tls.Config not set")
 	}
@@ -141,12 +142,20 @@ func (t *Transport) ListenEarly(tlsConf *tls.Config, conf *Config) (*EarlyListen
 	if err := t.init(false); err != nil {
 		return nil, err
 	}
-	s, err := newServer(t.conn, t.handlerMap, t.connIDGenerator, tlsConf, conf, t.Tracer, t.closeServer, true)
-	if err != nil {
-		return nil, err
-	}
+	s := newServer(
+		t.conn,
+		t.handlerMap,
+		t.connIDGenerator,
+		tlsConf,
+		conf,
+		t.Tracer,
+		t.closeServer,
+		*t.TokenGeneratorKey,
+		t.DisableVersionNegotiationPackets,
+		allow0RTT,
+	)
 	t.server = s
-	return &EarlyListener{baseServer: s}, nil
+	return s, nil
 }
 
 // Dial dials a new connection to a remote host (not using 0-RTT).
@@ -198,6 +207,14 @@ func (t *Transport) init(allowZeroLengthConnIDs bool) error {
 
 		t.closeQueue = make(chan closePacket, 4)
 		t.statelessResetQueue = make(chan receivedPacket, 4)
+		if t.TokenGeneratorKey == nil {
+			var key TokenGeneratorKey
+			if _, err := rand.Read(key[:]); err != nil {
+				t.initErr = err
+				return
+			}
+			t.TokenGeneratorKey = &key
+		}
 
 		if t.ConnectionIDGenerator != nil {
 			t.connIDGenerator = t.ConnectionIDGenerator
@@ -211,7 +228,7 @@ func (t *Transport) init(allowZeroLengthConnIDs bool) error {
 			t.connIDGenerator = &protocol.DefaultConnectionIDGenerator{ConnLen: t.connIDLen}
 		}
 
-		//getMultiplexer().AddConn(t.Conn)
+		// getMultiplexer().AddConn(t.Conn)
 		go t.listen(conn)
 		go t.runSendQueue()
 	})
@@ -223,7 +240,7 @@ func (t *Transport) WriteTo(b []byte, addr net.Addr) (int, error) {
 	if err := t.init(false); err != nil {
 		return 0, err
 	}
-	return t.conn.WritePacket(b, addr, nil)
+	return t.conn.WritePacket(b, addr, nil, 0, protocol.ECNUnsupported)
 }
 
 func (t *Transport) enqueueClosePacket(p closePacket) {
@@ -241,7 +258,7 @@ func (t *Transport) runSendQueue() {
 		case <-t.listening:
 			return
 		case p := <-t.closeQueue:
-			t.conn.WritePacket(p.payload, p.addr, p.info.OOB())
+			t.conn.WritePacket(p.payload, p.addr, p.info.OOB(), 0, protocol.ECNUnsupported)
 		case p := <-t.statelessResetQueue:
 			t.sendStatelessReset(p)
 		}
@@ -302,7 +319,7 @@ func (t *Transport) close(e error) {
 
 func (t *Transport) listen(conn rawConn) {
 	defer close(t.listening)
-	//defer getMultiplexer().RemoveConn(t.Conn)
+	// defer getMultiplexer().RemoveConn(t.Conn)
 
 	for {
 		p, err := conn.ReadPacket()
@@ -406,7 +423,7 @@ func (t *Transport) sendStatelessReset(p receivedPacket) {
 	rand.Read(data)
 	data[0] = (data[0] & 0x7f) | 0x40
 	data = append(data, token[:]...)
-	if _, err := t.conn.WritePacket(data, p.remoteAddr, p.info.OOB()); err != nil {
+	if _, err := t.conn.WritePacket(data, p.remoteAddr, p.info.OOB(), 0, protocol.ECNUnsupported); err != nil {
 		t.logger.Debugf("Error sending Stateless Reset to %s: %s", p.remoteAddr, err)
 	}
 }

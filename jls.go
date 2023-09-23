@@ -68,13 +68,13 @@ func (s *connection) newJLSForward() error {
 			if err != nil {
 				break
 			}
-			n, _, err := s.JLSForwardRaw.ReadFromUDP(buffer)
+			_, _, err = s.JLSForwardRaw.ReadFromUDP(buffer)
 			if err != nil {
 				fmt.Printf(err.Error())
 				continue
 			}
-			p := buffer[:n]
-			s.conn.Write(p, protocol.ByteCount(len(p)))
+			// p := buffer[:n]
+			// s.conn.Write(p, protocol.ByteCount(len(p)), nil)
 			s.JLSForwardLastAliveTime = time.Now()
 		}
 		buffer = nil

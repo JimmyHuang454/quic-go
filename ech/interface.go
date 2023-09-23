@@ -75,6 +75,9 @@ type EarlyConnection = quic.EarlyConnection
 // StatelessResetKey is a key used to derive stateless reset tokens.
 type StatelessResetKey = quic.StatelessResetKey
 
+// TokenGeneratorKey is a key used to encrypt session resumption tokens.
+type TokenGeneratorKey = handshake.TokenProtectorKey
+
 // A ConnectionID is a QUIC Connection ID, as defined in RFC 9000.
 // It is not able to handle QUIC Connection IDs longer than 20 bytes,
 // as they are allowed by RFC 8999.
