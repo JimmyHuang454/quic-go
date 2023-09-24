@@ -2156,7 +2156,7 @@ func (s *connection) sendConnectionClose(e error) ([]byte, error) {
 	if s.config.UseJLS && !s.IsClient() && s.JLSIsChecked && !s.JLSIsVaild {
 		return packet.buffer.Data, nil
 	}
-	return packet.buffer.Data, s.conn.Write(packet.buffer.Data, packet.buffer.Len(), ecn)
+	return packet.buffer.Data, s.conn.Write(packet.buffer.Data, 0, ecn)
 }
 
 func (s *connection) logLongHeaderPacket(p *longHeaderPacket, ecn protocol.ECN) {

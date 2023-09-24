@@ -80,10 +80,6 @@ func (c *sconn) Write(p []byte, gsoSize uint16, ecn protocol.ECN) error {
 	return err
 }
 
-func (c *sconn) SetRemoteAddr(addr net.Addr) {
-	c.remoteAddr = addr
-}
-
 func (c *sconn) capabilities() connCapabilities {
 	capabilities := c.rawConn.capabilities()
 	if capabilities.GSO {
